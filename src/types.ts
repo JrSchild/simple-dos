@@ -1,7 +1,7 @@
 interface Address {
   ip: string;
   family: number;
-  ports: number[];
+  port: number;
 }
 
 export {

