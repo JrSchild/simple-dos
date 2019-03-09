@@ -13,18 +13,22 @@ interface Address {
   family: number;
 }
 
-async function start() {
-  console.log(`Resolving '${hostname}'`);
+const resolveIPAddresses = async (hostname): Promise<Address[]> => {
 
   // Resolve the host for both IPv4 and IPv6. Swallow errors because it will throw an error if there are no results.
   const ipv4Addresses: string[] = await resolve(hostname, 'A').catch(() => [])
   const ipv6Addresses: string[] = await resolve(hostname, 'AAAA').catch(() => [])
 
-  const ipAddresses: Address[] = [
+  return [
     ...ipv4Addresses.map(address => ({ ip: address, family: 4 })),
     ...ipv6Addresses.map(address => ({ ip: address, family: 6 })),
   ];
+};
 
+async function start() {
+  console.log(`Resolving '${hostname}'`);
+
+  const ipAddresses: Address[] = await resolveIPAddresses(hostname);
   if (!ipAddresses.length) {
     throw new Error(`Could not resolve ${hostname}`);
   }
