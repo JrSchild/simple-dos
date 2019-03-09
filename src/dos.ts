@@ -1,10 +1,8 @@
-const _ = require('lodash');
-const net = require('net');
-const async = require('async');
-const { promisify } = require('util');
-const asyncFilter = promisify(async.filterLimit.bind(async));
-const { resolve } = require('dns').promises;
-const argv = require('yargs')
+import { resolveIPAddresses, checkPorts } from './helpers';
+import { Address } from './types';
+import * as yargs from 'yargs';
+
+const argv = yargs
   .demandCommand(1)
   .boolean('d')
   .alias('d', 'dry-run')
@@ -32,61 +30,6 @@ const argv = require('yargs')
 
 const hostname: string = argv._[0];
 
-const CHECK_PORT_TIMEOUT = 1500;
-const CHECK_PORT_ASYNC = 50;
-
-interface Address {
-  ip: string;
-  family: number;
-  ports: number[];
-}
-
-// Resolve the host for both IPv4 and IPv6. Swallow errors because it will throw an error if there are no results.
-const resolveIPAddresses = async (hostname: string): Promise<Address[]> => {
-  const ipv4Addresses: string[] = await resolve(hostname, 'A').catch(() => [])
-  const ipv6Addresses: string[] = await resolve(hostname, 'AAAA').catch(() => [])
-
-  return [
-    ...ipv4Addresses.map(address => ({ ip: address, family: 4, ports: [] })),
-    ...ipv6Addresses.map(address => ({ ip: address, family: 6, ports: [] })),
-  ];
-};
-
-// Check if a port on a specific address is open. Set the timeout to 1.5 seconds.
-const checkPort = async (addres: Address, port: number): Promise<any> => {
-  return new Promise(resolve => {
-    const socket = new net.Socket();
-    let isOpen = false;
-
-    socket.setTimeout(CHECK_PORT_TIMEOUT);
-    socket.on('connect', () => {
-      isOpen = true;
-      socket.end();
-    });
-    socket.on('timeout', () => socket.destroy());
-    socket.on('error', () => {
-      isOpen = false
-    });
-    socket.on('close', () => resolve(isOpen));
-    socket.connect(port, addres.ip);
-  });
-};
-
-// For each address, retrieve a list of open ports.
-const checkPorts = async (ipAddresses: Address[]): Promise<void> => {
-  for (const address of ipAddresses) {
-    console.log(`Determining open ports for ${address.ip}`);
-
-    // Create an array of ports to check
-    const ports: number[] = _.range(argv.ports.lower, argv.ports.upper);
-
-    // For each port, see if a connection can be established.
-    address.ports = await asyncFilter(ports, CHECK_PORT_ASYNC, (port: number, callback) => {
-      checkPort(address, port).then(isOpen => callback(null, isOpen));
-    });
-  }
-};
-
 async function start() {
   console.log(`Resolving '${hostname}'`);
 
@@ -97,7 +40,7 @@ async function start() {
 
   console.log('Found the following ip addresses:\n', ipAddresses.map(address => address.ip));
 
-  await checkPorts(ipAddresses);
+  await checkPorts(ipAddresses, argv.ports.lower, argv.ports.upper);
 
   console.log(ipAddresses)
 }
