@@ -44,6 +44,17 @@ async function master() {
   console.log('Found the following ip addresses:\n', ipAddresses.map(address => address.ip));
 
   const ipPorts = await checkPorts(ipAddresses, args.ports.lower, args.ports.upper);
+  if (!ipPorts.length) {
+    throw new Error(`Could not find any open ports`);
+  }
+
+  console.log('Using the following ip/port combinations:');
+  ipPorts.map(ipPort => console.log(` - ${ipPort.ip}:${ipPort.port}`));
+
+  if (args.dryRun) {
+    console.log('Dry run; exiting early');
+    return;
+  }
 
   // For each CPU, fork the cluster.
   for (let i = 0; i < os.cpus().length; i++) {
