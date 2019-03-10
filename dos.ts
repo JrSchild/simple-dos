@@ -1,6 +1,6 @@
 import * as cluster from 'cluster';
-import worker from './worker';
-import master from './master';
+import worker from './src/worker';
+import master from './src/master';
 
 if (cluster.isMaster) {
   master().catch(err => {
